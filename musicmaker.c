@@ -84,7 +84,7 @@ static void init( void ) {
   arInitCparam(&cparam);   // Inicializamos la camara con "cparam"
 
   // Cargamos el fichero de especificacion multimarca
-  if( (mMarker = arMultiReadConfigFile("data/marker.dat")) == NULL )
+  if( (mMarker = arMultiReadConfigFile("data/multimarker.dat")) == NULL )
     print_error("Error en fichero marker.dat\n");
 
   argInit(&cparam, 1.0, 0, 0, 0, 0);   // Abrimos la ventana 
