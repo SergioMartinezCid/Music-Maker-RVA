@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.pl": "prolog",
+        "*.lex": "lex",
+        "armulti.h": "c"
+    }
+}
