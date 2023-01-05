@@ -2,6 +2,7 @@
     "files.associations": {
         "*.pl": "prolog",
         "*.lex": "lex",
-        "armulti.h": "c"
+        "armulti.h": "c",
+        "gsub.h": "c"
     }
 }

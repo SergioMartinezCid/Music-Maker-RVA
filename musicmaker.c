@@ -106,7 +106,7 @@ static void mainLoop(void) {
   argDispImage(dataPtr, 0,0);    // Dibujamos lo que ve la camara 
 
   // Detectamos la marca en el frame capturado (return -1 si error)
-  if(arDetectMarker(dataPtr, 150, &marker_info, &marker_num) < 0) {
+  if(arDetectMarker(dataPtr, 125, &marker_info, &marker_num) < 0) {
     cleanup(); exit(0);   // Si devolvio -1, salimos del programa!
   }
 

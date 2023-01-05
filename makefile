@@ -1,5 +1,5 @@
 # Ruta absoluta o relativa (cuidado con espacios en blanco al final del path!)
-ARTOOLKITDIR = ../../ARToolKit
+ARTOOLKITDIR = ../ARToolKit
 INC_DIR      = $(ARTOOLKITDIR)/include
 LIB_DIR      = $(ARTOOLKITDIR)/lib
 
