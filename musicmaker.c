@@ -14,13 +14,57 @@
 #define STEPS_NUMBER 8
 #define BAR_WIDTH PAPER_WIDTH / STEPS_NUMBER
 #define STEP_FREQUENCY 500
+#define CF_THRESHOLD 0.8
 
-// ==== Definicion de constantes y variables globales ===============
-ARMultiMarkerInfoT  *mMarker;       // Estructura global Multimarca
+struct TObjectClass {
+  int id;                // Identificador del patrón
+  double width;          // Ancho del patron
+  double center[2];      // Centro del patron  
+  void (* drawme)(void); // Función de dibujado del patrón
+};
+
+struct TObjectInstance {
+  double patt_trans[3][4];     // Matriz asociada a la instancia del patrón
+  struct TObjectClass *class; // Clase de la instancia del patrón
+};
+
+struct TObjectClass *classes = NULL;
+int nclasses = 0;
+struct TObjectInstance *instances = NULL;
+int ninstances = 0;
+
+ARMultiMarkerInfoT  *mMarker;
 int stepIndex = 0;
 long long lastTimeChangedStep;
 
 void print_error (char *error) {  printf("%s\n",error); exit(0); }
+// ==== addClass (Anade objeto a la lista de objetos) ==============
+void addClass(char *p, double w, double c[2], void (*drawme)(void)) {
+  int pattid;
+
+  if((pattid=arLoadPatt(p)) < 0) 
+    print_error ("Error en carga de patron\n");
+
+  nclasses++;
+  classes = (struct TObjectClass *) 
+    realloc(classes, sizeof(struct TObjectClass) * nclasses);
+
+  classes[nclasses-1].id = pattid;
+  classes[nclasses-1].width = w;
+  classes[nclasses-1].center[0] = c[0];
+  classes[nclasses-1].center[1] = c[1];
+  classes[nclasses-1].drawme = drawme;
+}
+
+// ==== draw****** (Dibujado especifico de cada objeto) =============
+void drawNote(void) {
+  GLfloat material[]     = {0.0, 0.0, 1.0, 1.0};
+  glMaterialfv(GL_FRONT, GL_AMBIENT, material);
+  glTranslatef(0.0, 0.0, 20.0);
+  glRotatef(90.0, 1.0, 0.0, 0.0);
+  glutSolidTeapot(40.0);
+}
+
 // ======== cleanup =================================================
 static void cleanup(void) {   // Libera recursos al salir ...
   arVideoCapStop();   arVideoClose();   argCleanup();   exit(0);
@@ -69,11 +113,23 @@ static void draw( void ) {
   glEnable(GL_LIGHTING);  glEnable(GL_LIGHT0);
   glLightfv(GL_LIGHT0, GL_POSITION, light_position);
   
+  // Draw bar
+  glPushMatrix();
   glMaterialfv(GL_FRONT, GL_AMBIENT, barMaterial);
   glTranslatef(BAR_WIDTH*(stepIndex + 0.5), -1*PAPER_HALF_HEIGHT, 1.0);
   glScalef(BAR_WIDTH, PAPER_HEIGHT, 15);
   glutSolidCube(1);    
+  glPopMatrix();
 
+  for (i=0; i<ninstances; i++) {
+    argConvGlpara(instances[i].patt_trans, gl_para);   
+    glMatrixMode(GL_MODELVIEW);           
+    glLoadMatrixd(gl_para);
+
+    glEnable(GL_LIGHTING);  glEnable(GL_LIGHT0);
+    glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+    (*instances[i].class).drawme();
+  }
   glDisable(GL_DEPTH_TEST);
 }
 
@@ -81,6 +137,7 @@ static void draw( void ) {
 static void init( void ) {
   ARParam  wparam, cparam;   // Parametros intrinsecos de la camara
   int xsize, ysize;          // Tamano del video de camara (pixels)
+  double c[2] = {0.0, 0.0};  // Centro de patron (por defecto)
   
   // Abrimos dispositivo de video
   if(arVideoOpen("-dev=/dev/video2") < 0) exit(0);  
@@ -97,6 +154,11 @@ static void init( void ) {
   if( (mMarker = arMultiReadConfigFile("data/multimarker.dat")) == NULL )
     print_error("Error en fichero marker.dat\n");
 
+  addClass("data/metronome.patt", 50, c, drawNote); 
+  addClass("data/note.patt",      50, c, drawNote); 
+  addClass("data/piano.patt",     50, c, drawNote); 
+  addClass("data/xilophone.patt", 50, c, drawNote); 
+
   lastTimeChangedStep = timeInMilliseconds();
   argInit(&cparam, 1.0, 0, 0, 0, 0);   // Abrimos la ventana 
 }
@@ -105,7 +167,7 @@ static void init( void ) {
 static void mainLoop(void) {
   ARUint8 *dataPtr;
   ARMarkerInfo *marker_info;
-  int marker_num;
+  int marker_num, i, j;
 
   // Capturamos un frame de la camara de video
   if((dataPtr = (ARUint8 *)arVideoGetImage()) == NULL) {
@@ -122,7 +184,27 @@ static void mainLoop(void) {
   }
 
   arVideoCapNext();
-  
+
+  free(instances);
+  instances = NULL;
+  ninstances = 0;
+  for (i=0; i<marker_num; i++) {
+    if (marker_info[i].cf < CF_THRESHOLD) {
+      continue;
+    }
+
+    for (j=0; j<nclasses; j++) {
+      if(marker_info[i].id == classes[j].id) {
+        ninstances++;
+        instances = (struct TObjectInstance *)
+          realloc(instances, sizeof(struct TObjectInstance) * ninstances);
+        instances[ninstances-1].class = &classes[j];
+        arGetTransMat(&marker_info[i], classes[j].center, classes[j].width, instances[ninstances-1].patt_trans);
+        break;
+      }
+    }
+  }
+
   if(arMultiGetTransMat(marker_info, marker_num, mMarker) > 0) {
     updateState();
     draw();
