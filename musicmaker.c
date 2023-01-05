@@ -13,11 +13,19 @@
 #define PAPER_HALF_HEIGHT PAPER_HEIGHT / 2.0
 #define STEPS_NUMBER 8
 #define BAR_WIDTH PAPER_WIDTH / STEPS_NUMBER
-#define STEP_FREQUENCY 500
+#define STEP_FREQUENCY 1000 /* 500 TODO CHANGE BACK */
 #define CF_THRESHOLD 0.8
+
+enum Class {
+  NOTE,
+  PIANO,
+  XILOPHONE,
+  METRONOME
+};
 
 struct TObjectClass {
   int id;                // Identificador del patrón
+  enum Class classCode;
   double width;          // Ancho del patron
   double center[2];      // Centro del patron  
   void (* drawme)(void); // Función de dibujado del patrón
@@ -39,7 +47,7 @@ long long lastTimeChangedStep;
 
 void print_error (char *error) {  printf("%s\n",error); exit(0); }
 // ==== addClass (Anade objeto a la lista de objetos) ==============
-void addClass(char *p, double w, double c[2], void (*drawme)(void)) {
+void addClass(enum Class classCode, char *p, double w, double c[2], void (*drawme)(void)) {
   int pattid;
 
   if((pattid=arLoadPatt(p)) < 0) 
@@ -49,6 +57,7 @@ void addClass(char *p, double w, double c[2], void (*drawme)(void)) {
   classes = (struct TObjectClass *) 
     realloc(classes, sizeof(struct TObjectClass) * nclasses);
 
+  classes[nclasses-1].classCode = classCode;
   classes[nclasses-1].id = pattid;
   classes[nclasses-1].width = w;
   classes[nclasses-1].center[0] = c[0];
@@ -90,6 +99,24 @@ static void updateState()  {
   if (newTime - lastTimeChangedStep > STEP_FREQUENCY) {
     lastTimeChangedStep = newTime;
     stepIndex = ++stepIndex % 8;
+
+    // Check for all entities in the new bar position
+    double xMMark = mMarker->trans[0][3],
+           yMMark = mMarker->trans[1][3];
+    for (int i=0; i<ninstances; i++) {
+      // TODO: avoid using the switch statement and use the TObjectClass
+      switch (instances[i].class->classCode) {
+        case NOTE:
+        case PIANO:
+        case XILOPHONE:
+          double x = instances[i].patt_trans[0][3] - xMMark,
+                 y = instances[i].patt_trans[1][3] - yMMark;
+          if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < PAPER_HEIGHT) {
+            printf("MATCH\n");
+          }
+          break;
+      }
+    }
   }
 }
 
@@ -154,10 +181,10 @@ static void init( void ) {
   if( (mMarker = arMultiReadConfigFile("data/multimarker.dat")) == NULL )
     print_error("Error en fichero marker.dat\n");
 
-  addClass("data/metronome.patt", 50, c, drawNote); 
-  addClass("data/note.patt",      50, c, drawNote); 
-  addClass("data/piano.patt",     50, c, drawNote); 
-  addClass("data/xilophone.patt", 50, c, drawNote); 
+  addClass(NOTE, "data/note.patt",           50, c, drawNote); 
+  addClass(PIANO, "data/piano.patt",         50, c, drawNote); 
+  addClass(XILOPHONE, "data/xilophone.patt", 50, c, drawNote); 
+  addClass(METRONOME, "data/metronome.patt", 50, c, drawNote); 
 
   lastTimeChangedStep = timeInMilliseconds();
   argInit(&cparam, 1.0, 0, 0, 0, 0);   // Abrimos la ventana 
