@@ -4,10 +4,21 @@
 #include <AR/param.h>   
 #include <AR/ar.h>
 #include <AR/arMulti.h>
+#include <sys/time.h>
+#include <time.h>
+
+#define PAPER_WIDTH 594.0
+#define PAPER_HEIGHT 420.0
+#define PAPER_HALF_WIDTH PAPER_WIDTH / 2.0
+#define PAPER_HALF_HEIGHT PAPER_HEIGHT / 2.0
+#define STEPS_NUMBER 8
+#define BAR_WIDTH PAPER_WIDTH / STEPS_NUMBER
+#define STEP_FREQUENCY 500
 
 // ==== Definicion de constantes y variables globales ===============
 ARMultiMarkerInfoT  *mMarker;       // Estructura global Multimarca
-int markIndex = 0;   // Modo dibujo (objeto centrado o cubos en marcas)
+int stepIndex = 0;
+long long lastTimeChangedStep;
 
 void print_error (char *error) {  printf("%s\n",error); exit(0); }
 // ======== cleanup =================================================
@@ -19,14 +30,29 @@ static void cleanup(void) {   // Libera recursos al salir ...
 static void keyboard(unsigned char key, int x, int y) {
   switch (key) {
   case 0x1B: case 'Q': case 'q':  cleanup(); break;
-  case 'D': case'd': if (markIndex == 0) markIndex=1; else markIndex=0; break;
+  }
+}
+
+// https://stackoverflow.com/a/44896326
+long long timeInMilliseconds() {
+    struct timeval tv;
+
+    gettimeofday(&tv,NULL);
+    return (((long long)tv.tv_sec)*1000)+(tv.tv_usec/1000);
+}
+
+static void updateState()  {
+  long long newTime = timeInMilliseconds();
+  if (newTime - lastTimeChangedStep > STEP_FREQUENCY) {
+    lastTimeChangedStep = newTime;
+    stepIndex = ++stepIndex % 8;
   }
 }
 
 // ======== draw ====================================================
 static void draw( void ) {
   double  gl_para[16];   // Esta matriz 4x4 es la usada por OpenGL
-  GLfloat material[]        = {1.0, 1.0, 1.0, 1.0};
+  GLfloat barMaterial[]        = {1.0, 1.0, 1.0, 1.0};
   GLfloat light_position[]  = {100.0,-200.0,200.0,0.0};
   int i;
   
@@ -43,26 +69,10 @@ static void draw( void ) {
   glEnable(GL_LIGHTING);  glEnable(GL_LIGHT0);
   glLightfv(GL_LIGHT0, GL_POSITION, light_position);
   
-  if (markIndex == 0) {  // Dibujar cubos en marcas
-    for(i=0; i < mMarker->marker_num; i++) {
-      glPushMatrix();   // Guardamos la matriz actual
-      argConvGlpara(mMarker->marker[i].trans, gl_para);   
-      glMultMatrixd(gl_para);               
-      if(mMarker->marker[i].visible < 0) {  // No se ha detectado
-	material[0] = 1.0; material[1] = 0.0; material[2] = 0.0; }
-      else {           // Se ha detectado (ponemos color verde)
-	material[0] = 0.0; material[1] = 1.0; material[2] = 0.0; }
-      glMaterialfv(GL_FRONT, GL_AMBIENT, material);
-      glTranslatef(0.0, 0.0, 25.0);
-      glutSolidCube(50.0);
-      glPopMatrix();   // Recuperamos la matriz anterior
-    }
-  } else { // Dibujar objeto global
-    glMaterialfv(GL_FRONT, GL_AMBIENT, material);
-    glTranslatef(150.0, -100.0, 60.0);
-    glRotatef(90.0, 1.0, 0.0, 0.0);
-    glutSolidTeapot(90.0);    
-  }
+  glMaterialfv(GL_FRONT, GL_AMBIENT, barMaterial);
+  glTranslatef(BAR_WIDTH*(stepIndex + 0.5), -1*PAPER_HALF_HEIGHT, 1.0);
+  glScalef(BAR_WIDTH, PAPER_HEIGHT, 15);
+  glutSolidCube(1);    
 
   glDisable(GL_DEPTH_TEST);
 }
@@ -87,6 +97,7 @@ static void init( void ) {
   if( (mMarker = arMultiReadConfigFile("data/multimarker.dat")) == NULL )
     print_error("Error en fichero marker.dat\n");
 
+  lastTimeChangedStep = timeInMilliseconds();
   argInit(&cparam, 1.0, 0, 0, 0, 0);   // Abrimos la ventana 
 }
 
@@ -110,20 +121,22 @@ static void mainLoop(void) {
     cleanup(); exit(0);   // Si devolvio -1, salimos del programa!
   }
 
-  arVideoCapNext();      // Frame pintado y analizado... A por otro!
+  arVideoCapNext();
   
-  if(arMultiGetTransMat(marker_info, marker_num, mMarker) > 0) 
-    draw();       // Dibujamos los objetos de la escena
+  if(arMultiGetTransMat(marker_info, marker_num, mMarker) > 0) {
+    updateState();
+    draw();
+  }
   
-  argSwapBuffers(); // Cambiamos el buffer con lo que tenga dibujado
+  argSwapBuffers();
 }
 
 // ======== Main ====================================================
 int main(int argc, char **argv) {
-  glutInit(&argc, argv);    // Creamos la ventana OpenGL con Glut
-  init();                   // Llamada a nuestra funcion de inicio
+  glutInit(&argc, argv);
+  init();
   
-  arVideoCapStart();        // Creamos un hilo para captura de video
-  argMainLoop( NULL, keyboard, mainLoop );   // Asociamos callbacks...
+  arVideoCapStart();
+  argMainLoop( NULL, keyboard, mainLoop );
   return (0);
 }
