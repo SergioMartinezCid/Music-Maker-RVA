@@ -21,8 +21,7 @@
 #define STEPS_NUMBER 8
 #define BAR_WIDTH (PAPER_WIDTH / STEPS_NUMBER)
 #define NOTE_HEIGHT (PAPER_HEIGHT / 7.0)
-#define STEP_PERIOD 1000 /* 500 TODO CHANGE BACK? */
-#define CF_THRESHOLD 0.7
+#define CF_THRESHOLD 0.7 // TODO increase to .8 after fixing markers
 #define AUDIO_BUFFER_SIZE 8192
 #define MAX_STRING_SIZE 1024
 
@@ -72,6 +71,8 @@ ao_device *device;
 
 // Note ranges from 0 = C3 = Do to 6 = B3 = Si
 const char NOTE_NAME_MAPPING[7][3] = {"C3", "D3", "E3", "F3", "G3", "A3", "B3"};
+// where index 0 -> 1 metronome, 1 -> 2 metronomes, 2 -> 3 metronomes
+const int STEP_PERIOD_MAPPING[3] = {1000, 500, 250};
 
 void print_error (char *error) {  fprintf(stderr,"%s\n",error); exit(0); }
 
@@ -183,8 +184,19 @@ long long timeInMilliseconds() {
 }
 
 static void updateState()  {
+  int metronomes = 0;
+  for (int i=0; i<ninstances; i++) {
+    if (instances[i].class->classCode == METRONOME){ // TODO check that it works after fixing the patterns
+      metronomes++;
+    }
+  }
+  metronomes = metronomes > 3 ? 3 : metronomes; 
+  if (metronomes == 0) {
+    return;
+  }
+
   long long newTime = timeInMilliseconds();
-  if (newTime - lastTimeChangedStep > STEP_PERIOD) {
+  if (newTime - lastTimeChangedStep > STEP_PERIOD_MAPPING[metronomes-1]) {
     lastTimeChangedStep = newTime;
     stepIndex = ++stepIndex % 8;
 
@@ -200,7 +212,7 @@ static void updateState()  {
                  y = instances[i].patt_trans[1][3] - yMMark;
           if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < PAPER_HEIGHT) {
             int noteIndex = 6 - (int) (y/NOTE_HEIGHT); // TODO make notes fit within the inner rectangle
-            float noteLength = (STEP_PERIOD/2000.0) * (instances[i].direction + 1);
+            float noteLength = (STEP_PERIOD_MAPPING[metronomes-1]/2000.0) * (instances[i].direction + 1);
 
             sem_wait(&audioSemaphore);
             nAudioSources++;
