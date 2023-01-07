@@ -11,7 +11,9 @@
 #include <sndfile.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <string.h>
 
+#define MARKER_SIDE 50
 #define PAPER_WIDTH 594.0
 #define PAPER_HEIGHT 420.0
 #define PAPER_HALF_WIDTH (PAPER_WIDTH / 2.0)
@@ -22,11 +24,12 @@
 #define STEP_FREQUENCY 1000 /* 500 TODO CHANGE BACK */
 #define CF_THRESHOLD 0.7
 #define AUDIO_BUFFER_SIZE 8192
+#define MAX_STRING_SIZE 1024
 
 enum Class {
   NOTE,
   PIANO,
-  XILOPHONE,
+  MARIMBA,
   METRONOME
 };
 
@@ -55,15 +58,18 @@ int nclasses = 0;
 struct TObjectInstance *instances = NULL;
 int ninstances = 0;
 
+ARMultiMarkerInfoT  *mMarker;
+int stepIndex = 0;
+long long lastTimeChangedStep;
+
 pthread_t audioThread;
 sem_t audioSemaphore;
 struct TAudioSource *audioSources = NULL;
 int nAudioSources = 0;
 ao_device *device;
 
-ARMultiMarkerInfoT  *mMarker;
-int stepIndex = 0;
-long long lastTimeChangedStep;
+// Note ranges from 0 = C3 = Do to 6 = B3 = Si
+const char NOTE_NAME_MAPPING[7][3] = {"C3", "D3", "E3", "F3", "G3", "A3", "B3"};
 
 void print_error (char *error) {  fprintf(stderr,"%s\n",error); exit(0); }
 
@@ -190,22 +196,24 @@ static void updateState()  {
       switch (instances[i].class->classCode) {
         case NOTE:
         case PIANO:
-        case XILOPHONE:
+        case MARIMBA:
           double x = instances[i].patt_trans[0][3] - xMMark,
                  y = instances[i].patt_trans[1][3] - yMMark;
           if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < PAPER_HEIGHT) {
-            // Note ranges from 0 = C3 = Do to 6 = B3 = Si
-            int note = (int) (y/NOTE_HEIGHT);
-            // TODO
+            int noteIndex = 6 - (int) (y/NOTE_HEIGHT); // TODO make notes fit within the inner rectangle
             sem_wait(&audioSemaphore);
             nAudioSources++;
             audioSources = realloc(audioSources, sizeof(struct TAudioSource) * nAudioSources);
             buffer = calloc(AUDIO_BUFFER_SIZE, sizeof(short));
-            file = sf_open( "audio/synth/B3.wav", SFM_READ, &sfinfo);
+            char *notePath = malloc(MAX_STRING_SIZE);
+            snprintf(notePath, MAX_STRING_SIZE, "audio/piano/%s.wav", NOTE_NAME_MAPPING[noteIndex]);
+            printf("%s\n", notePath); // TODO REMOVE
+            file = sf_open(notePath, SFM_READ, &sfinfo);
+
             audioSources[nAudioSources-1].file = file;
             audioSources[nAudioSources-1].buffer = buffer; 
             audioSources[nAudioSources-1].readBytes = 0;
-            audioSources[nAudioSources-1].targetBytes = (int) (3.0 * sfinfo.channels * sfinfo.samplerate);
+            audioSources[nAudioSources-1].targetBytes = (int) (0.5 * sfinfo.channels * sfinfo.samplerate);
             sem_post(&audioSemaphore);
           }
           break;
@@ -219,7 +227,6 @@ static void draw( void ) {
   double  gl_para[16];   // Esta matriz 4x4 es la usada por OpenGL
   GLfloat barMaterial[]        = {1.0, 1.0, 1.0, 1.0};
   GLfloat light_position[]  = {100.0,-200.0,200.0,0.0};
-  int i;
   
   argDrawMode3D();              // Cambiamos el contexto a 3D
   argDraw3dCamera(0, 0);        // Y la vista de la camara a 3D
@@ -240,7 +247,7 @@ static void draw( void ) {
   glScalef(BAR_WIDTH, PAPER_HEIGHT, 15);
   glutSolidCube(1);    
 
-  for (i=0; i<ninstances; i++) {
+  for (int i=0; i<ninstances; i++) {
     argConvGlpara(instances[i].patt_trans, gl_para);   
     glMatrixMode(GL_MODELVIEW);           
     glLoadMatrixd(gl_para);
@@ -256,7 +263,7 @@ static void draw( void ) {
 static void init( void ) {
   ARParam  wparam, cparam;   // Parametros intrinsecos de la camara
   int xsize, ysize;          // Tamano del video de camara (pixels)
-  double c[2] = {0.0, 0.0};  // Centro de patron (por defecto)
+  double c[2] = {0.0, 0.0};  // Centro de patrón (por defecto)
   
   // Abrimos dispositivo de video
   if(arVideoOpen("-dev=/dev/video2") < 0) exit(0);  
@@ -273,10 +280,10 @@ static void init( void ) {
   if( (mMarker = arMultiReadConfigFile("data/multimarker.dat")) == NULL )
     print_error("Error en fichero marker.dat\n");
 
-  addClass(NOTE,      "data/note.patt",      50, c, drawNote); 
-  addClass(PIANO,     "data/piano.patt",     50, c, drawNote); 
-  addClass(XILOPHONE, "data/xilophone.patt", 50, c, drawNote); 
-  addClass(METRONOME, "data/metronome.patt", 50, c, drawNote); 
+  addClass(NOTE,      "data/note.patt",      MARKER_SIDE, c, drawNote); 
+  addClass(PIANO,     "data/piano.patt",     MARKER_SIDE, c, drawNote); 
+  addClass(MARIMBA,   "data/marimba.patt",   MARKER_SIDE, c, drawNote); 
+  addClass(METRONOME, "data/metronome.patt", MARKER_SIDE, c, drawNote); 
 
   lastTimeChangedStep = timeInMilliseconds();
   argInit(&cparam, 1.0, 0, 0, 0, 0);   // Abrimos la ventana 
