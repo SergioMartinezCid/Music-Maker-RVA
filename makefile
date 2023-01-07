@@ -1,9 +1,8 @@
-# Ruta absoluta o relativa (cuidado con espacios en blanco al final del path!)
 ARTOOLKITDIR = ../ARToolKit
 INC_DIR      = $(ARTOOLKITDIR)/include
 LIB_DIR      = $(ARTOOLKITDIR)/lib
 
-LIBS   = -lARgsub -lARvideo -lARMulti -lAR -lglut -lGLU -lGL -lm 
+LIBS   = -lARgsub -lARvideo -lARMulti -lAR -lglut -lGLU -lGL -lm -lao -ldl -lsndfile
 
 NAMEEXEC     = musicmaker
 

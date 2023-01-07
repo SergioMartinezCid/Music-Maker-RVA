@@ -6,6 +6,11 @@
 #include <AR/arMulti.h>
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
+#include <ao/ao.h>
+#include <sndfile.h>
+#include <pthread.h>
+#include <semaphore.h>
 
 #define PAPER_WIDTH 594.0
 #define PAPER_HEIGHT 420.0
@@ -16,6 +21,7 @@
 #define NOTE_HEIGHT (PAPER_HEIGHT / 7.0)
 #define STEP_FREQUENCY 1000 /* 500 TODO CHANGE BACK */
 #define CF_THRESHOLD 0.7
+#define AUDIO_BUFFER_SIZE 8192
 
 enum Class {
   NOTE,
@@ -37,16 +43,82 @@ struct TObjectInstance {
   struct TObjectClass *class; // Clase de la instancia del patrón
 };
 
+struct TAudioSource {
+    int64_t readBytes;
+    int64_t targetBytes;
+    SNDFILE *file;
+    short *buffer;
+};
+
 struct TObjectClass *classes = NULL;
 int nclasses = 0;
 struct TObjectInstance *instances = NULL;
 int ninstances = 0;
 
+pthread_t audioThread;
+sem_t audioSemaphore;
+struct TAudioSource *audioSources = NULL;
+int nAudioSources = 0;
+ao_device *device;
+
 ARMultiMarkerInfoT  *mMarker;
 int stepIndex = 0;
 long long lastTimeChangedStep;
 
-void print_error (char *error) {  printf("%s\n",error); exit(0); }
+void print_error (char *error) {  fprintf(stderr,"%s\n",error); exit(0); }
+
+// Based on https://gist.github.com/maxammann/52d6b65b42d8ce23512a
+void *play(void *parameter) {
+    int64_t read;
+    char *messageBuffer;
+    SNDFILE *file;
+    SF_INFO sfinfo;
+    short *buffer = calloc(AUDIO_BUFFER_SIZE, sizeof(short));
+
+    while (1) {
+        for(int j=0; j<AUDIO_BUFFER_SIZE; j++) {
+            buffer[j] = 0;
+        }
+
+        sem_wait(&audioSemaphore);
+        for (int i=0; i<nAudioSources; i++) {
+            read = sf_read_short(audioSources[i].file, audioSources[i].buffer, AUDIO_BUFFER_SIZE);
+            audioSources[i].readBytes += read;
+            if (read <= 0 || audioSources[i].readBytes >= audioSources[i].targetBytes) {
+                nAudioSources--;
+                for (int j=i; j<nAudioSources; j++) {
+                    audioSources[j] = audioSources[j+1];
+                }
+                audioSources = realloc(audioSources, sizeof(struct TAudioSource)*nAudioSources);
+                continue;
+            }
+
+            for (int j=0; j<read; j++) {
+                // Calculating the average for mixing is an approximation (https://stackoverflow.com/a/16177281)
+                buffer[j] += audioSources[i].buffer[j];
+            }
+        }
+
+        if (nAudioSources <= 0) {
+            usleep(100000);
+            sem_post(&audioSemaphore);
+            continue;
+        }
+
+        for (int j=0; j<AUDIO_BUFFER_SIZE; j++) {
+            buffer[j] /= nAudioSources;
+        }
+        sem_post(&audioSemaphore);
+
+        if (ao_play(device, (char *) buffer, (uint_32) (read * sizeof(short))) == 0) {
+            fprintf(stderr, "ao_play: failed.\n");
+            break;
+        }
+    }
+
+    pthread_exit(NULL);
+}
+
 // ==== addClass (Anade objeto a la lista de objetos) ==============
 void addClass(enum Class classCode, char *p, double w, double c[2], void (*drawme)(void)) {
   int pattid;
@@ -77,7 +149,13 @@ void drawNote(void) {
 
 // ======== cleanup =================================================
 static void cleanup(void) {   // Libera recursos al salir ...
-  arVideoCapStop();   arVideoClose();   argCleanup();   exit(0);
+  arVideoCapStop();
+  arVideoClose();
+  argCleanup();
+  pthread_cancel(audioThread);
+  ao_close(device);
+  ao_shutdown();
+  exit(0);
 }
 
 // ======== keyboard ================================================
@@ -101,6 +179,9 @@ static void updateState()  {
     lastTimeChangedStep = newTime;
     stepIndex = ++stepIndex % 8;
 
+    SF_INFO sfinfo;
+    short *buffer;
+    SNDFILE *file;
     // Check for all entities in the new bar position
     double xMMark = mMarker->trans[0][3],
            yMMark = mMarker->trans[1][3];
@@ -115,6 +196,17 @@ static void updateState()  {
           if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < PAPER_HEIGHT) {
             // Note ranges from 0 = C3 = Do to 6 = B3 = Si
             int note = (int) (y/NOTE_HEIGHT);
+            // TODO
+            sem_wait(&audioSemaphore);
+            nAudioSources++;
+            audioSources = realloc(audioSources, sizeof(struct TAudioSource) * nAudioSources);
+            buffer = calloc(AUDIO_BUFFER_SIZE, sizeof(short));
+            file = sf_open( "audio/synth/B3.wav", SFM_READ, &sfinfo);
+            audioSources[nAudioSources-1].file = file;
+            audioSources[nAudioSources-1].buffer = buffer; 
+            audioSources[nAudioSources-1].readBytes = 0;
+            audioSources[nAudioSources-1].targetBytes = (int) (3.0 * sfinfo.channels * sfinfo.samplerate);
+            sem_post(&audioSemaphore);
           }
           break;
       }
@@ -143,12 +235,10 @@ static void draw( void ) {
   glLightfv(GL_LIGHT0, GL_POSITION, light_position);
   
   // Draw bar
-  glPushMatrix();
   glMaterialfv(GL_FRONT, GL_AMBIENT, barMaterial);
   glTranslatef(BAR_WIDTH*(stepIndex + 0.5), -1*PAPER_HALF_HEIGHT, 1.0);
   glScalef(BAR_WIDTH, PAPER_HEIGHT, 15);
   glutSolidCube(1);    
-  glPopMatrix();
 
   for (i=0; i<ninstances; i++) {
     argConvGlpara(instances[i].patt_trans, gl_para);   
@@ -242,12 +332,34 @@ static void mainLoop(void) {
   argSwapBuffers();
 }
 
+static void initAudio() {
+  sem_init(&audioSemaphore, 0, 1);
+  ao_initialize();
+  int default_driver = ao_default_driver_id();
+
+  ao_sample_format format;
+  format.bits = 16;
+  format.channels = 2;
+  format.rate = 44100;
+  format.byte_format = AO_FMT_NATIVE;
+  format.matrix = 0;
+
+  device = ao_open_live(default_driver, &format, NULL);
+  if (device == NULL) {
+      print_error("Error opening device.");
+  }
+
+  pthread_create(&audioThread, NULL, *play, NULL);
+}
+
 // ======== Main ====================================================
 int main(int argc, char **argv) {
   glutInit(&argc, argv);
   init();
+  initAudio();
   
   arVideoCapStart();
   argMainLoop( NULL, keyboard, mainLoop );
+  cleanup();
   return (0);
 }
