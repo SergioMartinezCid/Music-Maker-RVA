@@ -9,12 +9,13 @@
 
 #define PAPER_WIDTH 594.0
 #define PAPER_HEIGHT 420.0
-#define PAPER_HALF_WIDTH PAPER_WIDTH / 2.0
-#define PAPER_HALF_HEIGHT PAPER_HEIGHT / 2.0
+#define PAPER_HALF_WIDTH (PAPER_WIDTH / 2.0)
+#define PAPER_HALF_HEIGHT (PAPER_HEIGHT / 2.0)
 #define STEPS_NUMBER 8
-#define BAR_WIDTH PAPER_WIDTH / STEPS_NUMBER
+#define BAR_WIDTH (PAPER_WIDTH / STEPS_NUMBER)
+#define NOTE_HEIGHT (PAPER_HEIGHT / 7.0)
 #define STEP_FREQUENCY 1000 /* 500 TODO CHANGE BACK */
-#define CF_THRESHOLD 0.8
+#define CF_THRESHOLD 0.7
 
 enum Class {
   NOTE,
@@ -112,7 +113,8 @@ static void updateState()  {
           double x = instances[i].patt_trans[0][3] - xMMark,
                  y = instances[i].patt_trans[1][3] - yMMark;
           if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < PAPER_HEIGHT) {
-            printf("MATCH\n");
+            // Note ranges from 0 = C3 = Do to 6 = B3 = Si
+            int note = (int) (y/NOTE_HEIGHT);
           }
           break;
       }
@@ -181,8 +183,8 @@ static void init( void ) {
   if( (mMarker = arMultiReadConfigFile("data/multimarker.dat")) == NULL )
     print_error("Error en fichero marker.dat\n");
 
-  addClass(NOTE, "data/note.patt",           50, c, drawNote); 
-  addClass(PIANO, "data/piano.patt",         50, c, drawNote); 
+  addClass(NOTE,      "data/note.patt",      50, c, drawNote); 
+  addClass(PIANO,     "data/piano.patt",     50, c, drawNote); 
   addClass(XILOPHONE, "data/xilophone.patt", 50, c, drawNote); 
   addClass(METRONOME, "data/metronome.patt", 50, c, drawNote); 
 
