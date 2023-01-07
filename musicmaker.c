@@ -36,6 +36,7 @@ enum Class {
 struct TObjectClass {
   int id;                // Identificador del patrón
   enum Class classCode;
+  char *instrumentPath;
   double width;          // Ancho del patron
   double center[2];      // Centro del patron  
   void (* drawme)(void); // Función de dibujado del patrón
@@ -86,7 +87,7 @@ void *play(void *parameter) {
             buffer[j] = 0;
         }
 
-        sem_wait(&audioSemaphore);
+        sem_wait(&audioSemaphore); // TODO optimize, minimize time here
         for (int i=0; i<nAudioSources; i++) {
             read = sf_read_short(audioSources[i].file, audioSources[i].buffer, AUDIO_BUFFER_SIZE);
             audioSources[i].readBytes += read;
@@ -126,7 +127,7 @@ void *play(void *parameter) {
 }
 
 // ==== addClass (Anade objeto a la lista de objetos) ==============
-void addClass(enum Class classCode, char *p, double w, double c[2], void (*drawme)(void)) {
+void addClass(enum Class classCode, char *instrumentPath, char *p, double w, double c[2], void (*drawme)(void)) {
   int pattid;
 
   if((pattid=arLoadPatt(p)) < 0) 
@@ -136,8 +137,9 @@ void addClass(enum Class classCode, char *p, double w, double c[2], void (*drawm
   classes = (struct TObjectClass *) 
     realloc(classes, sizeof(struct TObjectClass) * nclasses);
 
-  classes[nclasses-1].classCode = classCode;
   classes[nclasses-1].id = pattid;
+  classes[nclasses-1].classCode = classCode;
+  classes[nclasses-1].instrumentPath = instrumentPath;
   classes[nclasses-1].width = w;
   classes[nclasses-1].center[0] = c[0];
   classes[nclasses-1].center[1] = c[1];
@@ -192,11 +194,7 @@ static void updateState()  {
     double xMMark = mMarker->trans[0][3],
            yMMark = mMarker->trans[1][3];
     for (int i=0; i<ninstances; i++) {
-      // TODO: avoid using the switch statement and use the TObjectClass
-      switch (instances[i].class->classCode) {
-        case NOTE:
-        case PIANO:
-        case MARIMBA:
+      if (instances[i].class->instrumentPath != NULL) {
           double x = instances[i].patt_trans[0][3] - xMMark,
                  y = instances[i].patt_trans[1][3] - yMMark;
           if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < PAPER_HEIGHT) {
@@ -206,7 +204,7 @@ static void updateState()  {
             audioSources = realloc(audioSources, sizeof(struct TAudioSource) * nAudioSources);
             buffer = calloc(AUDIO_BUFFER_SIZE, sizeof(short));
             char *notePath = malloc(MAX_STRING_SIZE);
-            snprintf(notePath, MAX_STRING_SIZE, "audio/piano/%s.wav", NOTE_NAME_MAPPING[noteIndex]);
+            snprintf(notePath, MAX_STRING_SIZE, "audio/%s/%s.wav", instances[i].class->instrumentPath, NOTE_NAME_MAPPING[noteIndex]);
             printf("%s\n", notePath); // TODO REMOVE
             file = sf_open(notePath, SFM_READ, &sfinfo);
 
@@ -280,10 +278,11 @@ static void init( void ) {
   if( (mMarker = arMultiReadConfigFile("data/multimarker.dat")) == NULL )
     print_error("Error en fichero marker.dat\n");
 
-  addClass(NOTE,      "data/note.patt",      MARKER_SIDE, c, drawNote); 
-  addClass(PIANO,     "data/piano.patt",     MARKER_SIDE, c, drawNote); 
-  addClass(MARIMBA,   "data/marimba.patt",   MARKER_SIDE, c, drawNote); 
-  addClass(METRONOME, "data/metronome.patt", MARKER_SIDE, c, drawNote); 
+  // TODO add visual representation to all the instruments
+  addClass(NOTE,      "synth",   "data/note.patt",      MARKER_SIDE, c, drawNote); 
+  addClass(PIANO,     "piano",   "data/piano.patt",     MARKER_SIDE, c, drawNote); 
+  addClass(MARIMBA,   "marimba", "data/marimba.patt",   MARKER_SIDE, c, drawNote); 
+  addClass(METRONOME, NULL,      "data/metronome.patt", MARKER_SIDE, c, drawNote); 
 
   lastTimeChangedStep = timeInMilliseconds();
   argInit(&cparam, 1.0, 0, 0, 0, 0);   // Abrimos la ventana 
