@@ -184,16 +184,17 @@ long long timeInMilliseconds() {
 }
 
 static void updateState()  {
-  int metronomes = 0;
-  for (int i=0; i<ninstances; i++) {
-    if (instances[i].class->classCode == METRONOME){ // TODO check that it works after fixing the patterns
-      metronomes++;
-    }
-  }
-  metronomes = metronomes > 3 ? 3 : metronomes; 
-  if (metronomes == 0) {
-    return;
-  }
+  // TODO uncomment, change 'int metronomes = 1;' to 'int metronomes = 0;' and check that it works after fixing the patterns
+  int metronomes = 1;
+  // for (int i=0; i<ninstances; i++) {
+  //   if (instances[i].class->classCode == METRONOME){
+  //     metronomes++;
+  //   }
+  // }
+  // metronomes = metronomes > 3 ? 3 : metronomes; 
+  // if (metronomes == 0) {
+  //   return;
+  // }
 
   long long newTime = timeInMilliseconds();
   if (newTime - lastTimeChangedStep > STEP_PERIOD_MAPPING[metronomes-1]) {
