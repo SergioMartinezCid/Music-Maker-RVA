@@ -150,11 +150,33 @@ void addClass(enum Class classCode, char *instrumentPath, char *p, double w, dou
 
 // ==== draw****** (Dibujado especifico de cada objeto) =============
 void drawNote(void) {
-  GLfloat material[]     = {0.0, 0.0, 1.0, 1.0};
+  GLfloat material[]     = {0.4, 0.4, 0.4, 1.0};
+  glMaterialfv(GL_FRONT, GL_AMBIENT, material);
+  glTranslatef(0.0, 0.0, 30.0);
+  glScalef(40.0, 40.0, 60.0);
+  glutSolidOctahedron();
+}
+
+void drawPiano(void) {
+  GLfloat material[]     = {0.0, 0.0, 4.0, 1.0};
   glMaterialfv(GL_FRONT, GL_AMBIENT, material);
   glTranslatef(0.0, 0.0, 20.0);
-  glRotatef(90.0, 1.0, 0.0, 0.0);
-  glutSolidTeapot(40.0);
+  glScalef(1.0, 1.0, 0.4);
+  glutSolidCube(40.0);
+}
+
+void drawMarimba(void) {
+  GLfloat material[]     = {1.0, 0.2, 0.2, 1.0};
+  glMaterialfv(GL_FRONT, GL_AMBIENT, material);
+  glTranslatef(0.0, 0.0, 20.0);
+  glutSolidTorus(10.0, 20.0, 32, 8);
+}
+
+void drawMetronome(void) {
+  GLfloat material[]     = {0.2, 1.0, 0.2, 1.0};
+  glMaterialfv(GL_FRONT, GL_AMBIENT, material);
+  glTranslatef(0.0, 0.0, 30.0);
+  glutSolidCone(30.0, 60.0, 4, 10);
 }
 
 // ======== cleanup =================================================
@@ -212,7 +234,7 @@ static void updateState()  {
           double x = instances[i].patt_trans[0][3] - xMMark,
                  y = instances[i].patt_trans[1][3] - yMMark;
           if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < PAPER_HEIGHT) {
-            int noteIndex = 6 - (int) (y/NOTE_HEIGHT); // TODO make notes fit within the inner rectangle
+            int noteIndex = 6 - (int) (y/NOTE_HEIGHT);
             float noteLength = (STEP_PERIOD_MAPPING[metronomes-1]/2000.0) * (instances[i].direction + 1);
 
             sem_wait(&audioSemaphore);
@@ -294,11 +316,10 @@ static void init( void ) {
   if( (mMarker = arMultiReadConfigFile("data/multimarker.dat")) == NULL )
     print_error("Error en fichero marker.dat\n");
 
-  // TODO add visual representation to all the instruments
   addClass(NOTE,      "synth",   "data/note.patt",      MARKER_SIDE, c, drawNote); 
-  addClass(PIANO,     "piano",   "data/piano.patt",     MARKER_SIDE, c, drawNote); 
-  addClass(MARIMBA,   "marimba", "data/marimba.patt",   MARKER_SIDE, c, drawNote); 
-  addClass(METRONOME, NULL,      "data/metronome.patt", MARKER_SIDE, c, drawNote); 
+  addClass(PIANO,     "piano",   "data/piano.patt",     MARKER_SIDE, c, drawPiano); 
+  addClass(MARIMBA,   "marimba", "data/marimba.patt",   MARKER_SIDE, c, drawMarimba); 
+  addClass(METRONOME, NULL,      "data/metronome.patt", MARKER_SIDE, c, drawMetronome); 
 
   lastTimeChangedStep = timeInMilliseconds();
   argInit(&cparam, 1.0, 0, 0, 0, 0);   // Abrimos la ventana 
