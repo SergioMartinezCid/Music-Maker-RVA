@@ -21,7 +21,7 @@
 #define STEPS_NUMBER 8
 #define BAR_WIDTH (PAPER_WIDTH / STEPS_NUMBER)
 #define NOTE_HEIGHT (PAPER_HEIGHT / 7.0)
-#define STEP_FREQUENCY 1000 /* 500 TODO CHANGE BACK */
+#define STEP_PERIOD 1000 /* 500 TODO CHANGE BACK? */
 #define CF_THRESHOLD 0.7
 #define AUDIO_BUFFER_SIZE 8192
 #define MAX_STRING_SIZE 1024
@@ -43,7 +43,8 @@ struct TObjectClass {
 };
 
 struct TObjectInstance {
-  double patt_trans[3][4];     // Matriz asociada a la instancia del patrón
+  double patt_trans[3][4];    // Matriz asociada a la instancia del patrón
+  int direction;               // Rotation from 0 to 3; 0 -> half note, 1 -> full note, 2 -> note and a half, 3-> two notes
   struct TObjectClass *class; // Clase de la instancia del patrón
 };
 
@@ -183,7 +184,7 @@ long long timeInMilliseconds() {
 
 static void updateState()  {
   long long newTime = timeInMilliseconds();
-  if (newTime - lastTimeChangedStep > STEP_FREQUENCY) {
+  if (newTime - lastTimeChangedStep > STEP_PERIOD) {
     lastTimeChangedStep = newTime;
     stepIndex = ++stepIndex % 8;
 
@@ -199,6 +200,8 @@ static void updateState()  {
                  y = instances[i].patt_trans[1][3] - yMMark;
           if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < PAPER_HEIGHT) {
             int noteIndex = 6 - (int) (y/NOTE_HEIGHT); // TODO make notes fit within the inner rectangle
+            float noteLength = (STEP_PERIOD/2000.0) * (instances[i].direction + 1);
+
             sem_wait(&audioSemaphore);
             nAudioSources++;
             audioSources = realloc(audioSources, sizeof(struct TAudioSource) * nAudioSources);
@@ -211,7 +214,7 @@ static void updateState()  {
             audioSources[nAudioSources-1].file = file;
             audioSources[nAudioSources-1].buffer = buffer; 
             audioSources[nAudioSources-1].readBytes = 0;
-            audioSources[nAudioSources-1].targetBytes = (int) (0.5 * sfinfo.channels * sfinfo.samplerate);
+            audioSources[nAudioSources-1].targetBytes = (int) (noteLength * sfinfo.channels * sfinfo.samplerate);
             sem_post(&audioSemaphore);
           }
           break;
@@ -324,6 +327,7 @@ static void mainLoop(void) {
         instances = (struct TObjectInstance *)
           realloc(instances, sizeof(struct TObjectInstance) * ninstances);
         instances[ninstances-1].class = &classes[j];
+        instances[ninstances-1].direction = marker_info[i].dir;
         arGetTransMat(&marker_info[i], classes[j].center, classes[j].width, instances[ninstances-1].patt_trans);
         break;
       }
