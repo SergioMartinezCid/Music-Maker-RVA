@@ -252,7 +252,6 @@ static void updateState()  {
             audioSources[nAudioSources-1].targetBytes = (int) (noteLength * sfinfo.channels * sfinfo.samplerate);
             sem_post(&audioSemaphore);
           }
-          break;
       }
     }
   }
