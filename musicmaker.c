@@ -24,6 +24,7 @@
 #define NOTE_HEIGHT ((PAPER_HEIGHT - 2*MMARKER_SIDE) / 7.0)
 #define CF_THRESHOLD 0.7
 #define AUDIO_BUFFER_SIZE 8192
+#define MAX_AUDIO_QUEUE_SIZE 10
 #define MAX_STRING_SIZE 1024
 
 enum Class {
@@ -67,9 +68,9 @@ long long lastTimeChangedStep;
 
 pthread_t audioThread;
 sem_t audioSemaphore;
-struct TAudioSource *audioSources = NULL;
-int nAudioSources = 0;
 ao_device *device;
+struct TAudioSource audioQueue[MAX_AUDIO_QUEUE_SIZE];
+int nAudioQueue = 0, iAudioQueue = 0;
 
 // Note ranges from 0 = C3 = Do to 6 = B3 = Si
 const char NOTE_NAME_MAPPING[7][3] = {"C3", "D3", "E3", "F3", "G3", "A3", "B3"};
@@ -80,18 +81,28 @@ void print_error (char *error) {  fprintf(stderr,"%s\n",error); exit(0); }
 
 // Based on https://gist.github.com/maxammann/52d6b65b42d8ce23512a
 void *play(void *parameter) {
+    struct TAudioSource *audioSources = NULL;
+    int nAudioSources = 0;
     char *messageBuffer;
     SNDFILE *file;
     SF_INFO sfinfo;
     short *buffer = calloc(AUDIO_BUFFER_SIZE, sizeof(short));
 
     while (1) {
-        // TODO optimize fill with 0s, memset?
         for(int j=0; j<AUDIO_BUFFER_SIZE; j++) {
             buffer[j] = 0;
         }
 
-        sem_wait(&audioSemaphore); // TODO optimize, minimize time here
+        sem_wait(&audioSemaphore);
+        while (nAudioQueue > 0) {
+          nAudioSources++;
+          audioSources = realloc(audioSources, sizeof(struct TAudioSource) * nAudioSources);
+          audioSources[nAudioSources-1] = audioQueue[iAudioQueue];
+          iAudioQueue = ++iAudioQueue % MAX_AUDIO_QUEUE_SIZE;
+          nAudioQueue--;
+        }
+        sem_post(&audioSemaphore);
+
         for (int i=0; i<nAudioSources; i++) {
             audioSources[i].readBytesIter = sf_read_short(audioSources[i].file, audioSources[i].buffer, AUDIO_BUFFER_SIZE);
             audioSources[i].readBytesTotal += audioSources[i].readBytesIter;
@@ -113,11 +124,8 @@ void *play(void *parameter) {
 
         if (nAudioSources <= 0) {
             usleep(100000);
-            sem_post(&audioSemaphore);
             continue;
         }
-
-        sem_post(&audioSemaphore);
 
         if (ao_play(device, (char *) buffer, (uint_32) (AUDIO_BUFFER_SIZE * sizeof(short))) == 0) {
             fprintf(stderr, "ao_play: failed.\n");
@@ -237,17 +245,21 @@ static void updateState()  {
             float noteLength = (STEP_PERIOD_MAPPING[metronomes-1]/2000.0) * (instances[i].direction + 1);
 
             sem_wait(&audioSemaphore);
-            nAudioSources++;
-            audioSources = realloc(audioSources, sizeof(struct TAudioSource) * nAudioSources);
-            buffer = calloc(AUDIO_BUFFER_SIZE, sizeof(short));
-            char *notePath = malloc(MAX_STRING_SIZE);
-            snprintf(notePath, MAX_STRING_SIZE, "audio/%s/%s.wav", instances[i].class->instrumentPath, NOTE_NAME_MAPPING[noteIndex]);
-            file = sf_open(notePath, SFM_READ, &sfinfo);
+            if (nAudioQueue < MAX_AUDIO_QUEUE_SIZE) {
+              buffer = calloc(AUDIO_BUFFER_SIZE, sizeof(short));
+              char *notePath = malloc(MAX_STRING_SIZE);
+              snprintf(notePath, MAX_STRING_SIZE, "audio/%s/%s.wav", instances[i].class->instrumentPath, NOTE_NAME_MAPPING[noteIndex]);
+              file = sf_open(notePath, SFM_READ, &sfinfo);
 
-            audioSources[nAudioSources-1].file = file;
-            audioSources[nAudioSources-1].buffer = buffer; 
-            audioSources[nAudioSources-1].readBytesTotal = 0;
-            audioSources[nAudioSources-1].targetBytesTotal = (int) (noteLength * sfinfo.channels * sfinfo.samplerate);
+              nAudioQueue++;
+              int queueIndex = (iAudioQueue + nAudioQueue-1) % MAX_AUDIO_QUEUE_SIZE;
+              struct TAudioSource newAudioSource;
+              audioQueue[queueIndex] = newAudioSource;
+              audioQueue[queueIndex].file = file;
+              audioQueue[queueIndex].buffer = buffer; 
+              audioQueue[queueIndex].readBytesTotal = 0;
+              audioQueue[queueIndex].targetBytesTotal = (int) (noteLength * sfinfo.channels * sfinfo.samplerate);
+            }
             sem_post(&audioSemaphore);
           }
       }
