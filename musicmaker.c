@@ -20,9 +20,9 @@
 #define PAPER_HALF_WIDTH (PAPER_WIDTH / 2.0)
 #define PAPER_HALF_HEIGHT (PAPER_HEIGHT / 2.0)
 #define STEPS_NUMBER 8
-#define BAR_WIDTH (PAPER_WIDTH / STEPS_NUMBER)
-#define NOTE_HEIGHT (PAPER_HEIGHT / 7.0)
-#define CF_THRESHOLD 0.7 // TODO increase to .8 after fixing markers
+#define BAR_WIDTH ((PAPER_WIDTH - 2*MMARKER_SIDE) / STEPS_NUMBER)
+#define NOTE_HEIGHT ((PAPER_HEIGHT - 2*MMARKER_SIDE) / 7.0)
+#define CF_THRESHOLD 0.7
 #define AUDIO_BUFFER_SIZE 8192
 #define MAX_STRING_SIZE 1024
 
@@ -230,9 +230,9 @@ static void updateState()  {
            yMMark = mMarker->trans[1][3];
     for (int i=0; i<ninstances; i++) {
       if (instances[i].class->instrumentPath != NULL) {
-          double x = instances[i].patt_trans[0][3] - xMMark,
-                 y = instances[i].patt_trans[1][3] - yMMark;
-          if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < PAPER_HEIGHT) {
+          double x = instances[i].patt_trans[0][3] - xMMark - MMARKER_SIDE,
+                 y = 1.3*(instances[i].patt_trans[1][3] - yMMark - MMARKER_SIDE);
+          if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < 7*NOTE_HEIGHT) {
             int noteIndex = 6 - (int) (y/NOTE_HEIGHT);
             float noteLength = (STEP_PERIOD_MAPPING[metronomes-1]/2000.0) * (instances[i].direction + 1);
 
@@ -242,7 +242,6 @@ static void updateState()  {
             buffer = calloc(AUDIO_BUFFER_SIZE, sizeof(short));
             char *notePath = malloc(MAX_STRING_SIZE);
             snprintf(notePath, MAX_STRING_SIZE, "audio/%s/%s.wav", instances[i].class->instrumentPath, NOTE_NAME_MAPPING[noteIndex]);
-            printf("%s\n", notePath); // TODO REMOVE
             file = sf_open(notePath, SFM_READ, &sfinfo);
 
             audioSources[nAudioSources-1].file = file;
@@ -259,7 +258,8 @@ static void updateState()  {
 // ======== draw ====================================================
 static void draw( void ) {
   double  gl_para[16];   // Esta matriz 4x4 es la usada por OpenGL
-  GLfloat barMaterial[]        = {1.0, 1.0, 1.0, 1.0};
+  GLfloat barMaterialLight[]        = {3.0, 3.0, 3.0, 1.0};
+  GLfloat barMaterialDark[]        = {1.0, 1.0, 1.0, 1.0};
   GLfloat light_position[]  = {100.0,-200.0,200.0,0.0};
   
   argDrawMode3D();              // Cambiamos el contexto a 3D
@@ -276,10 +276,14 @@ static void draw( void ) {
   glLightfv(GL_LIGHT0, GL_POSITION, light_position);
   
   // Draw bar
-  glMaterialfv(GL_FRONT, GL_AMBIENT, barMaterial);
-  glTranslatef(BAR_WIDTH*(stepIndex + 0.5), -1*PAPER_HALF_HEIGHT, 1.0);
-  glScalef(BAR_WIDTH, PAPER_HEIGHT, 15);
-  glutSolidCube(1);    
+  for (int i=0; i<7; i++) {
+    glPushMatrix();
+    glMaterialfv(GL_FRONT, GL_AMBIENT, i % 2 ? barMaterialLight : barMaterialDark);
+    glTranslatef(MMARKER_SIDE + BAR_WIDTH*(stepIndex + 0.5), -1*MMARKER_SIDE - NOTE_HEIGHT*(i + 0.5), 1.0);
+    glScalef(BAR_WIDTH, NOTE_HEIGHT, 15);
+    glutSolidCube(1);    
+    glPopMatrix();
+  }
 
   for (int i=0; i<ninstances; i++) {
     argConvGlpara(instances[i].patt_trans, gl_para);   
