@@ -49,8 +49,9 @@ struct TObjectInstance {
 };
 
 struct TAudioSource {
-    int64_t readBytes;
-    int64_t targetBytes;
+    int64_t readBytesTotal;
+    int64_t readBytesIter;
+    int64_t targetBytesTotal;
     SNDFILE *file;
     short *buffer;
 };
@@ -79,22 +80,22 @@ void print_error (char *error) {  fprintf(stderr,"%s\n",error); exit(0); }
 
 // Based on https://gist.github.com/maxammann/52d6b65b42d8ce23512a
 void *play(void *parameter) {
-    int64_t read;
     char *messageBuffer;
     SNDFILE *file;
     SF_INFO sfinfo;
     short *buffer = calloc(AUDIO_BUFFER_SIZE, sizeof(short));
 
     while (1) {
+        // TODO optimize fill with 0s, memset?
         for(int j=0; j<AUDIO_BUFFER_SIZE; j++) {
             buffer[j] = 0;
         }
 
         sem_wait(&audioSemaphore); // TODO optimize, minimize time here
         for (int i=0; i<nAudioSources; i++) {
-            read = sf_read_short(audioSources[i].file, audioSources[i].buffer, AUDIO_BUFFER_SIZE);
-            audioSources[i].readBytes += read;
-            if (read <= 0 || audioSources[i].readBytes >= audioSources[i].targetBytes) {
+            audioSources[i].readBytesIter = sf_read_short(audioSources[i].file, audioSources[i].buffer, AUDIO_BUFFER_SIZE);
+            audioSources[i].readBytesTotal += audioSources[i].readBytesIter;
+            if (audioSources[i].readBytesIter <= 0 || audioSources[i].readBytesTotal >= audioSources[i].targetBytesTotal) {
                 nAudioSources--;
                 for (int j=i; j<nAudioSources; j++) {
                     audioSources[j] = audioSources[j+1];
@@ -102,10 +103,11 @@ void *play(void *parameter) {
                 audioSources = realloc(audioSources, sizeof(struct TAudioSource)*nAudioSources);
                 continue;
             }
-
-            for (int j=0; j<read; j++) {
+        }
+        for (int i=0; i<nAudioSources; i++) {
+            for (int j=0; j<audioSources[i].readBytesIter; j++) {
                 // Calculating the average for mixing is an approximation (https://stackoverflow.com/a/16177281)
-                buffer[j] += audioSources[i].buffer[j];
+                buffer[j] += audioSources[i].buffer[j]/nAudioSources;
             }
         }
 
@@ -115,12 +117,9 @@ void *play(void *parameter) {
             continue;
         }
 
-        for (int j=0; j<AUDIO_BUFFER_SIZE; j++) {
-            buffer[j] /= nAudioSources;
-        }
         sem_post(&audioSemaphore);
 
-        if (ao_play(device, (char *) buffer, (uint_32) (read * sizeof(short))) == 0) {
+        if (ao_play(device, (char *) buffer, (uint_32) (AUDIO_BUFFER_SIZE * sizeof(short))) == 0) {
             fprintf(stderr, "ao_play: failed.\n");
             break;
         }
@@ -248,8 +247,8 @@ static void updateState()  {
 
             audioSources[nAudioSources-1].file = file;
             audioSources[nAudioSources-1].buffer = buffer; 
-            audioSources[nAudioSources-1].readBytes = 0;
-            audioSources[nAudioSources-1].targetBytes = (int) (noteLength * sfinfo.channels * sfinfo.samplerate);
+            audioSources[nAudioSources-1].readBytesTotal = 0;
+            audioSources[nAudioSources-1].targetBytesTotal = (int) (noteLength * sfinfo.channels * sfinfo.samplerate);
             sem_post(&audioSemaphore);
           }
       }
