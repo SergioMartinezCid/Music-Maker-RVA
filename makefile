@@ -3,8 +3,12 @@ INC_DIR      = $(ARTOOLKITDIR)/include
 LIB_DIR      = $(ARTOOLKITDIR)/lib
 
 LIBS   = -lARgsub -lARvideo -lARMulti -lAR -lglut -lGLU -lGL -lm -lao -ldl -lsndfile
+.PHONY: clean all start
 
 NAMEEXEC     = musicmaker
+
+start: all
+	./musicmaker
 
 all: $(NAMEEXEC)
 
