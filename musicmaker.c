@@ -14,9 +14,9 @@
 #include <string.h>
 
 #define MARKER_SIDE 65
-#define MMARKER_SIDE 65
-#define PAPER_WIDTH 594.0
-#define PAPER_HEIGHT 420.0
+#define MMARKER_SIDE 60
+#define PAPER_WIDTH 573.0
+#define PAPER_HEIGHT 399.0
 #define PAPER_HALF_WIDTH (PAPER_WIDTH / 2.0)
 #define PAPER_HALF_HEIGHT (PAPER_HEIGHT / 2.0)
 #define STEPS_NUMBER 8
@@ -239,7 +239,7 @@ static void updateState()  {
     for (int i=0; i<ninstances; i++) {
       if (instances[i].class->instrumentPath != NULL) {
           double x = instances[i].patt_trans[0][3] - xMMark - MMARKER_SIDE,
-                 y = 1.3*(instances[i].patt_trans[1][3] - yMMark - MMARKER_SIDE);
+                 y = 1.25*(instances[i].patt_trans[1][3] - yMMark - MMARKER_SIDE); // 1.25 to compensate camera error
           if (stepIndex*BAR_WIDTH < x && x < (stepIndex+1)*BAR_WIDTH && 0 < y && y < 7*NOTE_HEIGHT) {
             int noteIndex = 6 - (int) (y/NOTE_HEIGHT);
             float noteLength = (STEP_PERIOD_MAPPING[metronomes-1]/2000.0) * (instances[i].direction + 1);
